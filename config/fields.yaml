@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# Field extraction rules (config-driven).
+#
+# Fields are EVOLVING: add / change / remove entries here without touching code.
+# Each field is extracted by ONE of two strategies:
+#
+#   strategy: label   -> find the value near a label/heading in the document body
+#   strategy: table   -> read the value from a document table cell
+#
+# The `key` is the stable internal name used through translation, merging, and
+# PDF rendering. `az_heading` is the Azerbaijani column/section heading shown in
+# the final report. Order here defines order in the output.
+# ---------------------------------------------------------------------------
+
+fields:
+  # --- Example 1: label/heading-based -------------------------------------
+  - key: "location"
+    az_heading: "Yer"
+    strategy: label
+    label:
+      # Any of these English labels may introduce the value (case-insensitive).
+      aliases: ["Location", "Site", "Facility"]
+      # Where the value sits relative to the label.
+      #   inline     -> same paragraph, after the label (e.g. "Location: Baku")
+      #   next_line  -> the following paragraph
+      value_position: inline
+    translate: true          # run the extracted value through the AZ dictionary
+
+  # --- Example 2: label/heading-based, multi-line free prose --------------
+  - key: "findings"
+    az_heading: "Aşkarlanmış qeydlər"
+    strategy: label
+    label:
+      aliases: ["Findings", "Observations", "Remarks"]
+      value_position: next_line
+      # Collect paragraphs until the next known label/heading is reached.
+      collect_until_next_label: true
+    translate: true          # mostly free prose -> dictionary + untranslated flagging
+
+  # --- Example 3: table-cell-based ----------------------------------------
+  - key: "inspector"
+    az_heading: "Müfəttiş"
+    strategy: table
+    table:
+      # Identify the table by a header cell it contains (case-insensitive).
+      identify_by_header: "Inspector"
+      # Read the value cell: the cell to the right of the header on the same row.
+      #   right_of_header | below_header
+      value_cell: right_of_header
+    translate: false         # proper names are not translated
+
+# ---------------------------------------------------------------------------
+# Notes:
+# - Add more fields by appending to `fields:`.
+# - Unknown/absent fields in a given report yield an empty value (rendered blank),
+#   never a crash.
+# ---------------------------------------------------------------------------

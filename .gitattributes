@@ -1,0 +1,12 @@
+# Cross-platform line-ending enforcement.
+# Normalize to LF in the repo; check out per-type below on all platforms.
+
+# Shell scripts must stay LF or they break on macOS/Linux (shebang, `\r`).
+*.sh   text eol=lf
+
+# PowerShell scripts use CRLF on Windows.
+*.ps1  text eol=crlf
+
+# Source and docs: LF everywhere.
+*.py   text eol=lf
+*.md   text eol=lf

@@ -1,0 +1,69 @@
+{
+  "client_name": "Khazar Fabrication",
+  "client_voen": "1000000002",
+  "equipment_used": "EPOCH LT",
+  "items_table": [
+    {
+      "date": "10.09.2025",
+      "item_name": "Boru",
+      "method": "MT",
+      "report_no": "KF-MT-26-001",
+      "result": "Yararlı",
+      "seq_no": "1",
+      "standard": "ASME B31.3"
+    },
+    {
+      "date": "10.09.2025",
+      "item_name": "Boru",
+      "method": "MT",
+      "report_no": "KF-MT-26-002",
+      "result": "Yararlı",
+      "seq_no": "2",
+      "standard": "ASME B31.3"
+    },
+    {
+      "date": "10.09.2025",
+      "item_name": "Boru",
+      "method": "MT",
+      "report_no": "KF-MT-26-003",
+      "result": "Yarasız",
+      "seq_no": "3",
+      "standard": "ASME B31.3"
+    },
+    {
+      "date": "10.09.2025",
+      "item_name": "Boru",
+      "method": "MT",
+      "report_no": "KF-MT-26-004",
+      "result": "Yararlı",
+      "seq_no": "4",
+      "standard": "ASME B31.3"
+    },
+    {
+      "date": "10.09.2025",
+      "item_name": "Boru",
+      "method": "MT",
+      "report_no": "KF-MT-26-005",
+      "result": "Yararlı",
+      "seq_no": "5",
+      "standard": "ASME B31.3"
+    },
+    {
+      "date": "10.09.2025",
+      "item_name": "Boru",
+      "method": "MT",
+      "report_no": "KF-MT-26-006",
+      "result": "Yarasız",
+      "seq_no": "6",
+      "standard": "ASME B31.3"
+    }
+  ],
+  "ndt_method": "MT",
+  "ndt_methods": [
+    "MT"
+  ],
+  "report_serial_no": "MR-KHF-25-09",
+  "reporting_period": "Sentyabr 2025",
+  "source_report_count": 6,
+  "total_records": 6
+}

@@ -1,0 +1,789 @@
+# ---------------------------------------------------------------------------
+# EXAMPLE settings — safe to commit. Copy this file, then fill in real values.
+#
+#   PowerShell:  Copy-Item config/settings.example.yaml config/settings.yaml
+#   bash / zsh:  cp config/settings.example.yaml config/settings.yaml
+#
+# config/settings.yaml is git-ignored, so your real VÖENs and the director's
+# identity-document values (FİN, seriya nömrəsi, name) stay on your machine and
+# never reach the remote. Every placeholder below is written in <ANGLE BRACKETS>
+# or as all-zero digits — replace each one before your first --live run.
+# ---------------------------------------------------------------------------
+# Monthly Report Automation — main settings
+# All paths are relative to the project root unless absolute.
+# Override `target_month` here, or pass --month on the CLI (CLI wins).
+# ---------------------------------------------------------------------------
+
+# Which month to include. Format: YYYY-MM. A report is included when its
+# detected primary inspection date falls within this calendar month.
+target_month: "2026-01"
+
+paths:
+  input_dir: "input"              # source English .docx reports
+  output_dir: "output"            # generated PDF(s)
+  translations: "translations/az.json"
+  fields_config: "config/fields.yaml"
+  fonts_dir: "assets/fonts"
+  images_dir: "images"            # corporate logos / stamps
+
+# Corporate assets rendered onto the report.
+branding:
+  header_logo: "Mag-Pi Logo.png"  # top-left of every page
+  stamp_logo: "Mohur Logo.png"    # Möhür stamp in the footer contractor block
+  # Document title printed centered in the page header.
+  report_title: "İNSPEKSİYA ÜZRƏ AYLIQ HESABATIN NƏTİCƏSİ"
+  # Official document-number template: MR-{METHOD}-{CLIENT}-{YY}-{MM}
+  # (MR = Monthly Report; CLIENT = short client token, e.g. UBOC; YY = 2-digit
+  # year; MM = 2-digit month). e.g. MR-UBOC-26-02. No MAG- prefix and no sequence
+  # number — one compiled report per client+month is already unique.
+  # ADR-004: {method} was DROPPED from the official serial. A compiled document is
+  # one month of one client across EVERY NDT method, so no single method token can
+  # name it; the method travels in each row's Üsul column instead. {method}, {mon}
+  # (3-letter month) and {seq} stay available for custom patterns; an empty client
+  # falls back to NA.
+  doc_number_pattern: "MR-{client}-{yy}-{mm}"
+
+# Output file naming. {month} -> target_month (e.g. 2026-01).
+output:
+  filename_pattern: "monthly-report-{month}.pdf"
+
+# Export copy (services/report_export.py). After each main.py run, copies every
+# compiled PDF + JSON sidecar from output/<Client>/ into
+#   <dir>/PDF/<CLIENT>/<YYYY>/<CLIENT>_<YYYY>-<MM>.pdf
+#   <dir>/JSON/<CLIENT>/<YYYY>/<CLIENT>_<YYYY>-<MM>.json
+# output/ itself is never touched. Unchanged files (SHA-256) are skipped; changed
+# ones are swapped in atomically. Nothing is ever deleted: a file with no source
+# is listed as an orphan. Off by default — a disabled run prints nothing extra.
+# export:
+#   enabled: false
+#   dir: "reports"            # relative to the project root, or absolute
+#   from_month: "2026-01"     # first reporting month exported ("YYYY-MM")
+
+# ---------------------------------------------------------------------------
+# Table presentation. PDF ONLY — nothing here touches the data: the JSON
+# sidecar still carries one entry per report, total_records still counts
+# reports, and filenames / document serials / ledger keys are unaffected.
+# ---------------------------------------------------------------------------
+presentation:
+  # Draw a run of consecutive, identical reports as ONE table line —
+  # RT-SDL-25-(086-102) instead of 17 rows (a real September batch went from
+  # 106 lines to 16). Two neighbouring lines merge only when the standard, the
+  # method, the verdict, the number prefix AND the number suffix all match and
+  # the numeric part is consecutive with the same zero padding.
+  #
+  # Never merged: retest rows, and any parent that HAS a retest row. The child
+  # is numbered off its parent's Sıra № (53 -> 53a), so a parent hidden inside
+  # a range would leave 53a pointing at a number the document does not contain.
+  # A verdict change also breaks the run on purpose — (1-12) Yararlı, 13
+  # Yarasız, (14-37) Yararlı — so a problem report can never hide in a range.
+  #
+  # false = one line per report, exactly as before this option existed.
+  collapse_ranges: true
+
+  # Draw a retest chain as ONE line. The retest rows (53a, 53b) are not printed
+  # and their parent carries the chain's FINAL verdict — a weld rejected in
+  # April and passed on the May retest prints once, as Yararlı. With the chain
+  # gone the parent is an ordinary row again, so it may now join a range.
+  #
+  # Measured over the corpus on 2026-09-18: 54 rows turn Yarasız -> Yararlı,
+  # 0 chains end still rejected, 108 retest rows stop being printed.
+  #
+  # OFF by default, unlike collapse_ranges: this one HIDES lines and REWRITES a
+  # printed verdict. A document already delivered to the state must not change
+  # because a key appeared in a config file the operator never edited.
+  rollup_retests: false
+
+  # Where a Yarasız line is printed.
+  #   inline  — at its chronological place in the one table (the behaviour that
+  #             predates this key). A verdict change already breaks a range, so
+  #             a rejected report can never hide inside one.
+  #   section — the rejected reports that were never retested move into a second
+  #             table after the main one, under the caption
+  #             "Təkrar yoxlanılmamış yararsız qaynaqlar" (az.json). Numbering
+  #             CONTINUES: the main table ends at N, the block starts at N+1, so
+  #             the document still has one gapless Sıra № sequence.
+  #
+  # A parent that still carries a retest row never moves — its 53a child would
+  # be torn away from 53. Measured on 2026-09-18 with rollup_retests on: 158
+  # rows, 123 lines, across 52 of the 126 documents.
+  #
+  # Ignored while collapse_ranges is false, because that mode prints each row's
+  # own Sıra № verbatim and splitting it would leave BOTH blocks full of gaps.
+  # Any unrecognised value reads as inline.
+  unfit_placement: inline
+
+  # İtem / Detal becomes one more value two neighbouring lines must share to
+  # merge. With it false, reports with different items still merge and the
+  # collapsed line prints the İtem column BLANK — U-MT-25-(028-030) once stood
+  # for three different cranes. With it true the range breaks wherever the item
+  # changes, so every collapsed line names its item.
+  #
+  # Measured on 2026-09-21 over 127 documents (rollup_retests: true,
+  # unfit_placement: section): table lines 1285 -> 1755 (+470) in 47 documents;
+  # collapsed lines with a blank item 100 -> 7 (the 7 left are runs whose
+  # reports all carry an empty item); pages 139 -> 149, nine documents gaining
+  # one or two pages. Reports, the JSON sidecar and total_records unchanged.
+  #
+  # OFF by default for the same reason as rollup_retests: it changes how an
+  # already delivered document is drawn. Ignored while collapse_ranges is false.
+  split_ranges_on_item: false
+
+  # How a cross-month retest parent is drawn. retest_tracker brings a retest's
+  # ORIGINAL forward from the month it was reported in, so the retest can be
+  # read; that row belongs to its own month's document.
+  #   plain  — drawn like any other row (the behaviour that predates this key):
+  #            it may join a range, and with rollup_retests on its chain draws
+  #            as ONE line carrying the parent's number and date, the retest
+  #            this month actually did hidden under it.
+  #   marked — its Sıra № gets a * and a note under the table names its month:
+  #            "* <Ay İl> hesabatına aiddir, burada arayış üçün
+  #            göstərilir." (az.json). It never joins a range, a roll-up never
+  #            folds its retest into it, and its JSON sidecar row gains
+  #            "pulled_from": "YYYY-MM". The row stays in items_table and in
+  #            total_records — it is on the page. On plain the sidecar is
+  #            byte-identical to before.
+  #   hidden — only with range_mode: by_number. The parent is not drawn at all:
+  #            no line, no *, no note, and its date and verdict do not count
+  #            towards its number's line. The JSON sidecar is byte-identical to
+  #            marked (the row keeps "pulled_from"). Under range_mode: strict,
+  #            or with collapse_ranges false, hidden reads as marked — a strict
+  #            table would print the parent's 53a with no 53 above it.
+  #
+  # Measured on 2026-09-21 over 127 documents (collapse_ranges, rollup_retests,
+  # split_ranges_on_item on; unfit_placement: section): 31 marked rows in 11
+  # documents; table lines 1755 -> 1808; pages 149 -> 151 (UBOC_APR_2025 and
+  # UBOC_MAR_2026 each 1 -> 2). Each of the 31 parents was found in its own
+  # month's document. Reports and total_records unchanged; the uploader reads
+  # no new key. Any unrecognised value reads as plain.
+  pulled_parent_style: plain
+
+  # How the table is ranged.
+  #   strict    — the rules above (the behaviour that predates this key): a
+  #               verdict change breaks a range, a retest chain is its own
+  #               lines (or one line with rollup_retests).
+  #   by_number — one line per report NUMBER, then consecutive numbers range:
+  #               U-RT-26-014, 014R1, 014RW, 014RW1 are one number, and
+  #               U-RT-26-(012-017) is one line. A range still breaks on a
+  #               missing number, a different prefix, label tail
+  #               (" (Dashgil 2)"), zero padding, standard, method, or İtem
+  #               with split_ranges_on_item. A verdict change does NOT break it.
+  #               Tarix is the first–last date of every report in the line:
+  #               "01–21.04.2026" in one month, "31.03–15.04.2026" across
+  #               months, "28.12.2025–05.01.2026" across a year, one date for
+  #               one day. The Tarix column is 3 mm wider (taken from Nəticə)
+  #               so a cross-month span fits on one line. Nəticə: a single number prints its
+  #               chain's LAST verdict; a range prints Yararlı when any number
+  #               in it ended Yararlı, else the shared verdict (Məlumat üçün
+  #               stays Məlumat üçün). Sıra № is 1..N, no 2a/2b.
+  #               A number that does not end in digits ("U-UT-25-003rej") never
+  #               ranges; it keeps its own line, spelled as written.
+  #               Every Yarasız report printed inside a Yararlı range is named
+  #               on stdout ("[range-verdict] ...") and in
+  #               output/range_verdict_<date>.md (no file when none).
+  #
+  # With by_number: rollup_retests is ignored (a chain is already one line),
+  # unfit_placement is ignored and reads as inline (one table), and
+  # split_ranges_on_item is honoured. collapse_ranges: false wins over it — that
+  # mode prints each row's own Sıra №. The JSON sidecar is unchanged: one entry
+  # per report, each with its own verdict. Any unrecognised value reads as strict.
+  range_mode: strict
+
+  # Number tails that may range under range_mode: by_number. A number whose
+  # tail (after the retest marker is stripped) is in this list, exactly and
+  # case-sensitively, ranges — only with numbers carrying the same tail:
+  # RT-KF-25-080T .. 106T print as "RT-KF-25-(080-106)T". A tail not in the
+  # list ("rej", "test", "del", ...) never ranges, and a tailed number never
+  # joins a plain one. Ignored under strict. [] = the behaviour that predates
+  # this key.
+  range_tail_allow: []
+
+  # Number tails absorbed into their base number's slot under range_mode:
+  # by_number (ADR-009 addendum, 2026-10-05). A number whose tail (after the
+  # retest marker is stripped) is in this list ranges as if it were its base:
+  # BS-RT-26-001 .. 010, 010A, 011 .. 016 print as ONE line
+  # "BS-RT-26-(001-016)". Exact and case-sensitive; only single upper-case
+  # letters are read ("rej", "test", "del", lowercase "a" never absorb).
+  # The range, date span and verdict rule ([range-verdict] audit included)
+  # count the absorbed number like any other. With the base number absent
+  # (010A without 010) the absorbed number fills that slot. A tail listed in
+  # range_tail_allow keeps that meaning. PDF only: the sidecar keeps every
+  # report with its own number. Ignored under strict. [] = the behaviour that
+  # predates this key.
+  range_absorb_tails: []
+
+  # Three keys that widen a by_number range (ADR-009 follow-up, E1–E3). All
+  # are ignored under strict and while collapse_ranges is false; at their
+  # defaults the table is exactly the one drawn before they existed. PDF only:
+  # the JSON sidecar keeps every report with its own number, standard, item
+  # and verdict, so the uploader (which reads standards from the sidecar)
+  # sees no difference. A missing number, prefix, method, zero padding and a
+  # number tail (range_tail_allow) still break a range; the verdict rule and
+  # the [range-verdict] audit are unchanged.
+  #
+  # range_ignore_tag — true: a different job tag (" (2236)", " (2274)") no
+  #   longer breaks a range. The range line prints NO tag:
+  #   KF-MT-26-(039-051). A single number keeps its own name:
+  #   KF-MT-26-054 (2334). false = the tag must match, and a range prints it.
+  range_ignore_tag: false
+  #
+  # range_merge_standards — true: a different standard no longer breaks a
+  #   range. The Standart cell lists every distinct standard once, comma
+  #   separated, in number order: "AWS D1.1, EEMUA 158, ASME B31.3". A long
+  #   list wraps, so the line grows taller. Also applies inside one number (a
+  #   retest citing another standard): that number is no longer kept apart.
+  #   Two spellings of one standard (ISO 23278 / ISO-23278: space, hyphen,
+  #   underscore and case ignored) print once, as first seen.
+  range_merge_standards: false
+  #
+  # range_item — split | dominant.
+  #   split    — split_ranges_on_item decides, as before this key.
+  #   dominant — a different İtem no longer breaks a range, and
+  #              split_ranges_on_item is ignored under by_number. The cell
+  #              prints ONE item: the one seen on the most report NUMBERS (a
+  #              retest chain is one vote); a tie goes to the smallest number;
+  #              a blank item never counts, all blank prints blank. Items are
+  #              compared the way az.json looks them up (trimmed, any case).
+  #   Any unrecognised value reads as split.
+  range_item: split
+  #
+  # range_item_blank_methods — methods whose range line prints "—" in the
+  #   İtem cell when its numbers carry 2+ distinct items (trimmed, any case;
+  #   blanks do not count). For methods whose item is an identifier (PMI
+  #   serials): the dominant one would hide the rest. A one-item range and a
+  #   single number keep their own item. Only read under range_item: dominant.
+  #   Methods compared trimmed, any case. [] = off.
+  range_item_blank_methods: []
+
+  # Order of the method blocks.
+  #   method_date   — method name, then date (the order that predates this key).
+  #   method_volume — the method with the most printed reports first (a hidden
+  #                   pulled parent does not count), ties by method name. Inside
+  #                   a block: date under strict; by_number always sorts by
+  #                   number. A parent moves together with its 53a/53b.
+  # Ignored while collapse_ranges is false. Any unrecognised value reads as
+  # method_date.
+  row_order: method_date
+
+  # Table body shading. The header is never changed.
+  #   retest_highlight — amber background on retest lines (53a, 53b) — the
+  #                      behaviour that predates this key.
+  #   method_zebra     — no retest shading; method blocks alternate white /
+  #                      light grey (#F2F2F2), the first block white.
+  # Any unrecognised value reads as retest_highlight.
+  row_style: retest_highlight
+
+# ---------------------------------------------------------------------------
+# Cross-month retest parents. Optional — the key has a working default.
+# ---------------------------------------------------------------------------
+retest:
+  # off | strict. A retest whose original is not in its month gets the LATEST
+  # earlier original of its series pulled in (retest_tracker). A report number
+  # can be reused for two jobs, and a file can carry another report's content,
+  # so that parent is not always the retest's own original.
+  #   off    — pull it, as before this key existed. DEFAULT.
+  #   strict — prove it first:
+  #            * welds readable on both sides: every weld the retests inspected
+  #              (repair tails R1 / RW / RW1 / "/RW-n" removed) must be one the
+  #              parent inspected;
+  #            * welds unreadable on either side: the filename job group, the
+  #              standard and the İtem / Detal must each match the retest's.
+  #            A parent that fails is NOT pulled — no older candidate is tried —
+  #            the retest prints as an orphan, and report.skipped records
+  #            "(parent file, çarpaz-ay valideyn … gətirilmədi (…): tikiş A ≠ B)".
+  #            At run end the console prints a count and one line per refusal:
+  #            "[pull rejected] <parent>: <why> — valideyn gətirilmədi
+  #            (<group>; <retests>)".
+  #
+  # Measured on 2026-09-21: of 31 pulled parents
+  # strict refuses one — U-RT-26-005 for UBOC_MAR_2026, whose file carries
+  # U-RT-26-004's content (weld QB-4; the retests inspected QB-5).
+  pull_weld_check: off
+
+# ---------------------------------------------------------------------------
+# Performance tuning. Optional — every key here has a working default.
+# ---------------------------------------------------------------------------
+performance:
+  # (max_convert_workers was removed by ADR-003. There is no PDF conversion stage
+  # any more: PDFs are read directly with PyMuPDF, which is milliseconds per file
+  # rather than tens of seconds per page, so there is no pool left to size. A key
+  # left over in an old settings.yaml is ignored, not an error.)
+
+  # Persistent parse cache (parse_cache.py). Memoizes the .docx table parse across
+  # runs, keyed by file CONTENT hash — so a recurring monthly run re-parses only the
+  # files that are new or changed since last time, not the entire history sitting in
+  # input/. Every historical report stays on disk (cross-month retest linking needs
+  # it); only the parse work is skipped. Store is machine-local + gitignored.
+  # Set to false to disable and always re-parse everything.
+  parse_cache: true
+  parse_cache_dir: ".parse_cache"    # relative to the project root
+
+  # Incremental compilation (main.py). A month+method+client group whose source
+  # reports are all unchanged since the last run keeps its existing PDF + JSON
+  # sidecar instead of re-rendering identical bytes through ReportLab. A group is
+  # re-rendered when any report for that client is new or changed (including in a
+  # neighbouring month — cross-month retest parents), when either artifact is
+  # missing, or when settings.yaml / the translations file was edited after the PDF
+  # was written. Requires parse_cache (that is where the "what changed?" signal comes
+  # from) and is bypassed for one run by `python main.py --force-rebuild`.
+  incremental_compile: true
+
+  # Live progress counters. Every stage prints `[Stage N: Name] [i/total] ...` as
+  # it works, flushed line by line, so a long run is visibly moving instead of
+  # apparently hung. This is how often it prints: 1 = every file, 25 = every
+  # twenty-fifth. The first and last item of a stage always print whatever the
+  # value. Set to 0 to switch the counters off — the per-stage summary lines stay
+  # either way, and the desktop dashboard's progress bars read those, not these.
+  #
+  # Worth turning down on a corpus of a thousand-plus reports: at 1 the sorter and
+  # the parse each emit one line per file, which is a lot of console to scroll.
+  progress_every: 1
+
+# ---------------------------------------------------------------------------
+# NDT method registry (config-driven — NO method is hardcoded in Python).
+# The input pre-processor (main.sort_input_files) reads this to sort loose
+# root-level .docx into method subfolders. Each entry:
+#   folder   -> subdirectory created under input/ for that method
+#   patterns -> case-insensitive regex/substrings matched against the FILENAME;
+#               first method with any matching pattern wins.
+# Patterns are hyphen-delimited (e.g. "-UT-") so "-UT-" never matches "-UTR-".
+# To onboard a new method: add a block below — zero code changes required.
+# UTR/RT/PT/EC/UV/PMI/HV are registered now as ready-to-use placeholders.
+#
+# default_standard -> last-resort acceptance standard for this method. It fills the
+# Standart column ONLY when a document has no extractable standard AND no sibling in
+# the same monthly batch has one either (the batch-level horizontal fallback in
+# merger.py copies a sibling's standard first). Edit these to your official norms.
+# ---------------------------------------------------------------------------
+# NOTE: entries evaluated top-down; the FIRST matching pattern wins. So keep
+# longer/more-specific tokens (UTR, UTM, PMI, FC) ABOVE broader ones (UT, RT).
+# `informational: true` methods (UTM, HrT) always report "Məlumat üçün" — no
+# Yararlı/Yarasız verdict is computed for them.
+# NOTE: entries evaluated top-down; the FIRST matching pattern wins. So keep
+# longer/more-specific tokens ABOVE broader ones. In particular HrT MUST precede
+# RT: RT's broad "RT-" would otherwise match the "rT-" inside "HrT-". Likewise
+# UTR/UTM precede UT.
+# `informational: true` methods (UTM, HrT) always report "Məlumat üçün" — no
+# Yararlı/Yarasız verdict is computed for them.
+ndt_methods:
+  UTR:                              # Ultrasonic (TOFD/PAUT retest) — before UT
+    folder: "UTR"
+    patterns: ["-UTR-"]
+    default_standard: "ISO 11666"
+  UTM:                             # Ultrasonic Thickness (INFORMATIONAL) — before UT
+    folder: "UTM"
+    patterns: ["-UTM-", "_UTM-", "UTM-"]
+    informational: true
+  PMI:                             # Positive Material Identification (INFORMATIONAL)
+    folder: "PMI"
+    patterns: ["-PMI-", "_PMI_", "PMI-"]
+    informational: true              # material ID — Nəticə is always "Məlumat üçün"
+    default_standard: "ASTM E1476"   # last-resort so Standart is never blank
+  FERRITE:                         # Ferrite content (report tokens: FC, FCM)
+    folder: "FERRITE"
+    # "FCM" (Ferrite Content Measurement) is an alternate spelling seen on the share.
+    # It must precede "FC" in the token set, which _registry_detect guarantees by
+    # sorting longest-first, so an FCM name never resolves as FC.
+    patterns: ["-FCM-", "-FC-", "-FERRITE-", "_FERRITE_", "FE-", "FERRITE-"]
+    default_standard: "AWS A4.2M"    # last-resort so Standart is never blank
+  DP:                              # Dye Penetrant / PT (absorbs the old standalone PT)
+    folder: "DP"
+    patterns: ["-DP-", "_DP-", "-PT-", "_PT_", "DP-", "PT-"]
+    default_standard: "ISO 3452-1"
+  HrT:                             # Hardness Testing (INFORMATIONAL) — MUST precede RT
+    folder: "HT"
+    patterns: ["-HrT-", "-HT-", "H.TEST-", "HrT-", "HT-"]
+    informational: true
+  UT:                              # Ultrasonic
+    folder: "UT"
+    # "UT-" (no leading hyphen) catches method-first names like UT-SDLN-26-042.
+    # Safe here: "UT-" does not match "UTM-"/"UTR-", and UTM/UTR are evaluated
+    # above UT, so a real UTM/UTR file matches its own token first.
+    patterns: ["-UT-", "UT-"]
+    default_standard: "ISO 11666"
+  MPI:                             # Magnetic Particle (report token: MT)
+    folder: "MPI"
+    patterns: ["-MT-", "-MPI-", "-MP-"]
+    default_standard: "ISO 23278"
+  RT:                              # Radiographic
+    folder: "RT"
+    # "RT-" (no leading hyphen) is intentionally broad so front-loaded names like
+    # RT-SDLN-26-698 are caught. RT is evaluated AFTER the specific methods above,
+    # so a genuine UT/MT/HrT file matches its own token first.
+    patterns: ["-RT-", "_RT_", "RT-"]
+    default_standard: "ISO 10675-1"
+  EC:                              # Eddy Current
+    folder: "EC"
+    patterns: ["-EC-", "-ET-"]
+  UV:                              # Visual / UV fluorescent
+    folder: "UV"
+    patterns: ["-UV-"]
+  HV:                              # Hardness (Vickers)
+    folder: "HV"
+    patterns: ["-HV-"]
+
+# ---------------------------------------------------------------------------
+# Dynamic volume filter (config-driven — NO threshold is hardcoded in Python).
+# A (month x method x client) group that is too small is SKIPPED in BOTH the
+# compile (main.py) and upload (uploader.py) lifecycles. Per-method minimums;
+# the `default` entry applies to any method with no entry of its own:
+#   min_reports -> distinct report numbers in the group
+#   min_items   -> inspected item rows (== the sidecar's total_records)
+#
+# Combine by OR: a group is KEPT when it clears ANY active threshold, and SKIPPED
+# only when it fails EVERY active one. A threshold of 0 turns that dimension OFF,
+# so the all-zero `default` below filters NOTHING — the whole feature is opt-in,
+# exactly like an empty `excluded_clients` excludes nobody. Enable it by giving a
+# method (or `default`) a positive floor.
+# NOTE (OR semantics): to gate on items alone, leave min_reports 0 and set
+# min_items > 0 (and vice-versa) — a 0 dimension never causes a skip on its own.
+# ---------------------------------------------------------------------------
+volume_thresholds:
+  default: {min_reports: 0, min_items: 0}   # 0/0 = off. Set real values to enable.
+  # DEPRECATED (ADR-004): the per-method entries below. A compiled document is now
+  # one month of one client across every method, so the render loop asks for the
+  # `default` floor and a per-method key is never looked up. Kept, not deleted, so
+  # a hand-maintained settings.yaml does not change meaning silently.
+  # UT:  {min_reports: 2, min_items: 3}
+  # RT:  {min_reports: 2, min_items: 0}
+
+# ---------------------------------------------------------------------------
+# Client registry (config-driven — NO client is hardcoded in Python).
+# Reports are separated into one compiled PDF per client. A report's client is
+# decided INTERNALLY-FIRST: the document body's "Client:" field is matched against
+# each entry's `aliases`; only when that field is empty or unmatched do we fall
+# back to the report-number PREFIX (the token before -<METHOD>-). Each entry:
+#   code     -> short, filesystem-safe client code used in the output subfolder +
+#               filename token (output/RT/CLIENT_A/..., ..._RT_CLIENT_A_...). NOT in the serial.
+#   name     -> display name shown in the "Müştəri:" header meta-text
+#   voen     -> client Tax ID (VÖEN). ALWAYS a quoted string — an opaque identifier,
+#               never a number (quoting preserves leading zeros and avoids precision
+#               loss on long IDs). Exported into the JSON sidecar's `client_voen`.
+#   prefixes -> report-number prefixes (case-insensitive) — the FALLBACK path only
+#   aliases  -> case-insensitive substrings matched against the internal Client:
+#               field (whitespace-normalized). First entry with any alias hit wins.
+#
+# The three example rows below demonstrate every supported shape — replace them
+# with your own clients and real VÖENs:
+#   * CLIENT_A  — the simple case: one prefix, one alias.
+#   * CLIENT_B / CLIENT_C — TWO entries sharing ONE prefix. Use this when one
+#     report-number prefix covers two DISTINCT internal clients (e.g. a company's
+#     "Fabrication" vs "Engineering" arms): both carry the shared prefix, so they
+#     are only separable via the internal Client: field — hence two alias-driven
+#     entries, and the fallback code (CLIENT_B here) wins on a bare prefix hit.
+#   * CLIENT_D  — ONE client written under TWO prefixes: list both in `prefixes`.
+# Any internal value / prefix not listed auto-defaults to prefix-as-code at runtime.
+#
+# `active: false` (OPTIONAL, default true) RETIRES a client inline: its documents
+# are quarantined into input/SKIPPED_REPORTS/ and never compile/upload/appear in
+# the audit — the same effect as listing the code in `excluded_clients` below.
+# ---------------------------------------------------------------------------
+clients:
+  CLIENT_A: {code: "CLIENT_A", name: "<CLIENT A DISPLAY NAME>", voen: "0000000000", prefixes: ["A"],        aliases: ["<internal client name a>"]}
+  # CLIENT_RETIRED: {code: "CLIENT_RETIRED", name: "<RETIRED>", voen: "0000000000", prefixes: ["R"], aliases: ["<retired>"], active: false}  # demo: inline blacklist
+  CLIENT_B: {code: "CLIENT_B", name: "<CLIENT B DISPLAY NAME>", voen: "0000000000", prefixes: ["BC"],       aliases: ["<internal name b>"]}   # shares prefix BC with CLIENT_C; wins the bare-prefix fallback
+  CLIENT_C: {code: "CLIENT_C", name: "<CLIENT C DISPLAY NAME>", voen: "0000000000", prefixes: [],           aliases: ["<internal name c>"]}   # same prefix as CLIENT_B; separated only by the internal field
+  CLIENT_D: {code: "CLIENT_D", name: "<CLIENT D DISPLAY NAME>", voen: "0000000000", prefixes: ["D", "DX"],  aliases: ["<internal name d>"]}   # one client written under two prefixes
+
+# Retired accounts, by client code. Their documents are quarantined into
+# input/SKIPPED_REPORTS/ on discovery and never compile into a monthly report;
+# uploader.py also refuses to file any report for them still sitting in output/.
+# KEEP the client's entry in the registry above — the aliases are how these files
+# are recognised at all. Deleting the entry makes them unresolvable, not excluded.
+excluded_clients: []
+
+# STRICT upload allowlist. When non-empty, uploader.py files an appeal ONLY for a
+# client whose registry `code` is listed here — a live-portal safety gate stricter
+# than `excluded_clients`/`active: false`, which default to allow (so a non-retired
+# or unregistered client would otherwise reach the government form). Empty / absent
+# = OFF (every client is fileable). Codes are registry `code`s.
+#   e.g. approved_clients: ["KHF", "KHE", "UBOC", "AZF", "BS", "SDLN", "NOV", "GEMZA"]
+approved_clients: []
+
+# ---------------------------------------------------------------------------
+# Corpus-wide client filtration. Volume is CUMULATIVE across the whole input/
+# history: a client below `min_total_client_volume` total reports AND present in
+# only one month is a throwaway one-off, skipped in place (files left in input/
+# so future months accumulate; nothing is moved). A client spanning >= 2 months
+# is kept regardless. 0/absent = filter OFF (opt-in, like volume_thresholds).
+# ---------------------------------------------------------------------------
+filtering:
+  min_total_client_volume: 0
+  # Transposed Report № merge (RT-U-25-090 / U-RT-25-090 — the same segments in a
+  # different order, one physical report read twice). OFF by default: this switch
+  # changes report.rows and therefore every Sira No in the compiled document, so
+  # the operator turns it on AFTER reading the collision report, never as a silent
+  # default. A pair is merged only when the two documents' weld identifiers prove
+  # they are one report; disjoint weld sets are two real inspections and are left
+  # alone, and an undecidable pair keeps both rows and is named in report.skipped
+  # (see src/monthly_report/duplicate_identity.py).
+  merge_duplicate_identities: false
+  # A file whose NAME serial differs from its in-body Report No serial
+  # (U-RT-26-005 (Zığ).docx holds U-RT-26-004) is warned about on EVERY run —
+  # console `[report-no mismatch]` + output/report_no_mismatch_<date>.md — and
+  # never renamed or re-numbered: the source is fixed on the LAN. Measured
+  # 2026-09-21: 22 files, 9 of them copies.
+  #
+  # true keeps only a COPY out of the document (and out of a cross-month pull):
+  # a file whose tables are identical to another file named with the body's
+  # serial, i.e. one inspection printed under two numbers. The reason lands in
+  # report.skipped ("report-no mismatch: …"). A mismatch that is not a copy is
+  # only warned about. Off by default: it changes report.rows and Sira No.
+  block_mismatched_report_no: false
+  # R3-D (2026-10-05). A results table whose header row reads "Item | Qty | ..."
+  # made the Item: label scan return the next column header as the item:
+  # "Qty", "S/N", "DetailNo", "Detail No", "Number of holes", and the "N/A"
+  # placeholder. true: rejected; the row falls back to Description, then the
+  # weld items. Changes the Item of compiled rows, so default false.
+  reject_item_header_labels: false
+  # R4-B (2026-10-06). Earlier runs staged reports from share folders named
+  # "delete" (any case): files the inspector set aside. Nothing new is staged
+  # from there since R3-B, but the old copies are still in input/. true: a file
+  # whose SHA-256 matches a delete-folder file in the ingestion manifest (and no
+  # working-folder file) feeds no row; report.skipped says "from delete folder"
+  # and so does the coverage report. The file is never moved. Changes rows, so
+  # default false.
+  exclude_delete_folder_sources: false
+  # Runs of blanks inside a standard's name collapse to one, at the single point
+  # where the row's Standart value is read. "Doc No: Q01906  criteria Table 3"
+  # and "Doc No: Q01906 criteria Table 3" are one normative document; printing
+  # both on one official sheet reads as two.
+  #
+  # ON by default — the only switch here that is. Measured 2026-09-18 before the
+  # default was chosen: exactly ONE such pair exists in the corpus (89 rows / 17
+  # documents against 186 rows / 15), every affected document is AZF, and no AZF
+  # document can be filed (all 21 name only Doc No: Q… standards, which the
+  # portal does not offer). So the fix cannot alter a document that uploads.
+  #
+  # It is NOT folded into text_norm.fold_typography: that function maps one
+  # spelling of a single CHARACTER onto another, and widening it would change
+  # what split_standards returns, i.e. the text that reaches the portal form.
+  #
+  # Nothing downstream depended on the extra blank: both uploader._standard_key
+  # and method_registry._standard_key already normalise separators, so the
+  # allowlist gate and the portal matcher answer the same either way. What DOES
+  # change is the PDF — the two spellings could not merge into one range line
+  # (18 adjacent row pairs across 10 documents), so those documents re-render
+  # with fewer lines and renumbered Sira No. false = the pre-fix table.
+  collapse_standard_spaces: true
+
+# ---------------------------------------------------------------------------
+# Allowed NDT standards registry (config-driven — NO standard is hardcoded in
+# Python). Approved allowlist enforced at ingestion (pre_processor.discover_groups):
+# a report whose extracted Standart is NOT on this list is quarantined into
+# input/SKIPPED_REPORTS/ and never compiles — like `excluded_clients` for accounts.
+#
+# Matching is separator-blind + case-insensitive for literals ("ISO 17636" ==
+# "ISO-17636" == "iso  17636"). An entry starting with `^`, ending with `$`, or
+# containing a backslash is a REGEX, full-matched against the standard (separators
+# normalized to spaces) — regex entries MUST be single-quoted so YAML keeps the
+# backslash. A blank/unextractable standard is NOT quarantined (left to the
+# method-default fallback); only a non-blank standard that fails the list is.
+#
+# LEFT EMPTY BY DEFAULT = guardrail disabled (every standard allowed). To enable
+# it, mirror your master list — the shipped config copies every row of
+# standarts/butun_standartlar.md — AND include whatever you use as `ndt_methods[*]
+# .default_standard` so reports that resolve to a method default still compile.
+# Example:
+#   - "API 1104"
+#   - "ISO 17636"
+#   - "ASME I-XII"                                         # ASME aggregate (company list; portal option since 2026-10-06, provisional)
+#   - '^ASME\s+(I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)$'   # regex: ASME I–XII
+# ---------------------------------------------------------------------------
+allowed_standards: []
+
+# ---------------------------------------------------------------------------
+# Inspector assignment matrix — whose name goes in the "İnspektor" signature
+# block of a compiled report. Keyed by CLIENT CODE from the registry above.
+#
+# This OVERRIDES the inspector name scraped from the source .docx sign-off
+# tables: assignment is a standing routing decision, not a property of whichever
+# document happened to be parsed first. An unmapped client falls back to the
+# scraped name, so leaving this block empty preserves the old behaviour exactly.
+#
+# `date_routing` wins over `clients` for the same code — use it for a client
+# whose inspector changed hands on a date. `boundary` is compared against the
+# REPORT'S MONTH (its first day), not against individual row dates: a monthly
+# report can carry retest parents pulled in from EARLIER months, and those must
+# not drag the whole report's signature backwards. `on_or_after` includes the
+# boundary day itself.
+# ---------------------------------------------------------------------------
+inspector_matrix:
+  clients: {}
+    # CLIENT_A: "<INSPECTOR FULL NAME>"
+  date_routing: {}
+    # CLIENT_D:
+    #   boundary:    "YYYY-MM-DD"
+    #   before:      "<INSPECTOR FULL NAME>"
+    #   on_or_after: "<OTHER INSPECTOR>"
+
+# ---------------------------------------------------------------------------
+# E-Keyfiyyet portal integration (uploader.py).
+#
+# Auth is MANUAL and PERSISTED, not scripted: uploader.py opens a Chrome window
+# against `user_data_dir` below. Log in there ONCE — the session cookie stays in
+# that directory and later runs reuse it. This is deliberately NOT your default
+# Chrome profile: Chrome 136+ refuses automation flags on the default profile,
+# and pointing a driver at your daily profile risks clobbering live tabs.
+# ---------------------------------------------------------------------------
+portal:
+  # The appeal form. This is the URL uploader.py WAITS FOR, not one it opens:
+  # navigating there without a session just bounces to login, and the form
+  # locators then run against a login page. See landing_url.
+  url: "https://e-keyfiyyet.gov.az/uqq/new-appeal"
+
+  # The public page uploader.py actually opens. You log in (Asan İmza / e-İmza)
+  # and navigate to the appeal form yourself; the script watches and takes over.
+  landing_url: "https://e-keyfiyyet.gov.az/home"
+
+  # How long to wait for you to get there. Nothing is typed into any form until
+  # you arrive. This budget covers the whole cold path — click login, pick Asan,
+  # enter phone + ID, confirm on the HANDSET, reach the dashboard, open the
+  # appeal form — and the handset step is a human round-trip on a separate host
+  # (mygovid.gov.az) that we do not control. 300s was tried and was not enough:
+  # a probe run expired still sitting on /auth/with-asan-login. Do not trim this
+  # back to look tidy; the script is not what makes it slow.
+  takeover_timeout_seconds: 900
+
+  user_data_dir: ".browser_profile"   # git-ignored; holds the session cookie
+
+  # Value selected in the "Yeni sənəd *" dropdown.
+  document_type: "İnspeksiya orqanının rəyi"
+
+  # NOTE: there is no placeholder_standard setting any more, and no method-standard
+  # fallback. ZERO SUBSTITUTION — a report citing a standard the portal does not offer
+  # is skipped whole (SKIPPED_UNMATCHED_STANDARD), nothing is typed and nothing is
+  # saved. The ledger is left untouched, so it uploads itself on a later run once the
+  # portal lists the standard. `python uploader.py --dry-run --all` names every report
+  # this affects without opening a browser.
+
+  # Standard policy (ADR-010). "all" (default) = the zero-substitution rule above: one
+  # standard the portal does not offer refuses the whole report. "any" = file the
+  # standards the portal offers, leave the rest off the appeal and print
+  #   "  standards skipped (policy any): [...]"
+  # A report with ZERO offered standards is still refused. If the live listbox lacks a
+  # standard the baseline matched, the whole report is refused under either policy.
+  # standard_policy: "all"
+
+  # Operator hold (ADR-010 addendum). Document IDs <CLIENT>_<MON>_<YYYY> (the tail of
+  # compiled_monthly_report_<CLIENT>_<MON>_<YYYY>.pdf) that must NOT be filed, e.g.
+  # while their source files are being fixed. A held document is refused before any
+  # browser action, under --dry-run and --live alike, and the ledger is not touched.
+  # Each one prints "  HELD by operator (portal.hold_documents): <id>" and the batch
+  # summary lists it as held (not skipped, not failed). Release = remove the ID.
+  # A malformed ID stops the run with a config error. Default: [] (nothing held).
+  # hold_documents: ["UBOC_FEB_2026"]
+
+  # Closed months only (ADR-010 addendum, D6). true = a document whose reporting
+  # month is the current month (Asia/Baku date) or later is never filed: reports for
+  # it can still arrive. Refused before any browser action, under --dry-run and
+  # --live alike; the ledger is not touched. Each one prints
+  # "  NOT YET (month not closed): <id>" and the batch summary lists it apart (not
+  # skipped, not failed). It files on its own once the month has ended. An undatable
+  # sidecar is refused too. Must be true or false. Default: false (no month check).
+  # upload_closed_months_only: true
+
+  # Range / alias map: {portal option: [pattern, ...]}. A parsed standard matching any
+  # of an option's patterns is tagged as that option — a TRUE match, filed with no
+  # correction warning. Use it for the portal's AGGREGATE / combined options. List
+  # ONLY options the live portal really offers: a key the listbox lacks makes --dry-run
+  # falsely green. ("ASME I-XII" is on the portal's provisional 21-standard list,
+  # operator screenshot 2026-10-06, NOT yet probe-verified. It covers ASME Sections
+  # I–XII only; ASME B31.x are separate options and are NOT mapped to it.) An option fires
+  # only when the live listbox offers it. Same rules as allowed_standards (^/$/\ = case-insensitive regex, single-quoted;
+  # else separator-blind literal). A wanted matching two offered options refuses rather
+  # than guess. Empty {} disables aliasing. Example:
+  #   standard_aliases:
+  #     # ASME Sections I–XII (Roman numerals) -> the aggregate option. NOT B31.x:
+  #     "ASME I-XII":
+  #       - '^ASME\s+(I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)$'
+  standard_aliases: {}
+
+  # Signing director. REQUIRED before any --live run; blank on purpose, since
+  # these are real identity-document values that must be entered by their owner.
+  # uploader.py aborts BEFORE opening a browser if any of these is still empty,
+  # rather than filing an incomplete appeal.
+  #
+  # The name is THREE keys, not one, because the portal has three separate boxes:
+  # the probe read the group as "Uyğunluğu qiymətləndirən qurumun rəhbəri: …
+  # (ad/name) (soyadı/surname) (atasının adı/middle name)". Splitting a single
+  # "<SURNAME> <GIVEN NAME>" across them means guessing which token is the given name —
+  # so you write each part yourself. Fill these in exactly as they appear on the
+  # director's identity document.
+  director:
+    ad: "<GIVEN NAME>"                      # (ad/name) — given name
+    soyadi: "<SURNAME>"                     # (soyadı/surname)
+    atasinin_adi: "<PATRONYMIC>"            # (atasının adı/middle name) — patronymic
+    fin: "<FIN>"                            # FİN — from the director's identity document
+    seriya_nomresi: "<SERIYA NÖMRƏSI>"      # Seriya nömrəsi — from the director's identity document
+
+# Locale / language of the generated report.
+locale:
+  language: "az"                  # Azerbaijani
+  # Date format used when printing dates into the PDF (strftime).
+  date_format: "%d.%m.%Y"
+
+# Fonts embedded into the PDF (must exist in paths.fonts_dir).
+# See assets/fonts/README.md for how to obtain these.
+fonts:
+  regular: "DejaVuSans.ttf"
+  bold: "DejaVuSans-Bold.ttf"
+
+# Date detection tuning.
+date_detection:
+  # Candidate labels (English) that typically precede the inspection date.
+  # Matching is case-insensitive; first confident hit wins.
+  labels:
+    - "Inspection Date"
+    - "Date of Inspection"
+    - "Date"
+  # dateutil parsing: interpret ambiguous numeric dates as day-first (DD/MM/YYYY).
+  dayfirst: true
+
+# Translation behavior.
+translation:
+  # Dictionary is authoritative. When a segment has no dictionary entry it is
+  # kept and marked so gaps are auditable rather than silently dropped.
+  flag_untranslated: true
+  untranslated_marker: "[AZ?]"    # prefix applied to flagged (untranslated) text
+  # Placeholder for a future optional machine-translation fallback.
+  machine_translation:
+    enabled: false
+    provider: null                # e.g. "azure", "google" — wired up later
+
+# ---------------------------------------------------------------------------
+# LAN network-share ingestion sources (READ-ONLY discovery).
+# UNC paths to the remote SMB share holding raw NDT inspection reports.
+# discover_network_share.py traverses these read-only; nothing is ever written
+# back to the share. Unreachable roots are reported, not fatal. Edit these to
+# match your own share layout before running the discovery scanner.
+# ---------------------------------------------------------------------------
+network_ingestion:
+  lan_sources:
+    - "\\\\<HOST>\\<SHARE>\\Hardness Test"
+    - "\\\\<HOST>\\<SHARE>\\Dye Penetrant"
+    # NOTE: "Heat Treatment" is deliberately NOT a source — it is not an NDT
+    # inspection method and its documents never compile. "Hardness Test" above
+    # (HrT) is the one that stays.
+    - "\\\\<HOST>\\<SHARE>\\MPI"
+    - "\\\\<HOST>\\<SHARE>\\PMI- (Positive Material Identification)"
+    - "\\\\<HOST>\\<SHARE>\\UT"
+    - "\\\\<HOST>\\<SHARE>\\X-ray"
+    - "\\\\<HOST>\\<SHARE>\\Ferrite content reports-2005-2026"
+  # R3-B (2026-10-05). A share file is skipped when a local file has the same
+  # stem; its content was never compared. true: a share file whose exact NAME
+  # exists locally but whose SIZE differs from every local copy of that name is
+  # staged as a -lan twin, and the existing hash / twin logic decides. Default
+  # false = the old behaviour. A folder named "delete" (any case) on the share is
+  # never staged, whatever this says.
+  stage_size_mismatch: false
+
+# ---------------------------------------------------------------------------
+# Run audits (R3-C, 2026-10-05).
+# coverage_report: true writes output/coverage_<YYYY-MM-DD>.md — every source
+# file under input/ with exactly one outcome (in a document, or why not), 2026+
+# first — and prints one line at run end:
+#   "  Coverage: N sources, M in documents, K explained elsewhere, U UNEXPLAINED"
+# U > 0 is a signal, never a failure. Default false = no file, no line.
+# ---------------------------------------------------------------------------
+audit:
+  coverage_report: false

@@ -1,0 +1,136 @@
+# ===========================================================================
+# Secrets & decoupled config — commit ONLY config/settings.example.yaml
+# ===========================================================================
+config/settings.yaml
+# Backups of it carry the same director FİN / seriya nömrəsi and client VÖENs —
+# written by gui/services/settings_writer.py and by hand before an edit.
+config/settings.yaml.bak
+# Timestamped copies (settings.yaml.bak_YYYYMMDD_HHMM) carry the same data.
+config/settings.yaml.bak*
+.env
+
+# Live E-Keyfiyyet portal session cookie — highest priority, NEVER commit.
+.browser_profile/
+
+# ===========================================================================
+# Confidential client documents & generated artifacts
+# ===========================================================================
+# Source inspection reports (keep the folder via .gitkeep, ignore its contents).
+input/*
+!input/.gitkeep
+
+# Generated PDFs + JSON sidecars (keep the folder, ignore its contents).
+output/*
+!output/.gitkeep
+
+# Pre-refactor archives of output/ + the machine-local upload state. Holds real
+# client documents and a copy of the idempotency ledger — never committed.
+output_backup/
+output_backup_20260921/
+output_backup_*/
+
+# Archived backups, retired output trees and retired tooling (moved here 2026-09-28).
+# Same real client documents / ledger copies as above - never committed. Only the
+# index README is tracked; `_archive/*` (not `_archive/`) so the negation can apply.
+_archive/*
+!_archive/README.md
+
+# Retired compiled artifacts: a PDF+JSON pair whose GROUP no longer exists in the
+# corpus (its source reports were re-sorted, re-dated or removed). Nothing in
+# main.py sweeps these — _retire_artifacts only visits a group it discovered, and
+# _purge_excluded_client_outputs only sweeps a blacklisted client — so they are
+# moved here by hand rather than deleted, the same recoverable-trash convention as
+# input/_PRUNED/. Real client documents; never committed.
+output_stale/
+
+# Verdict-gate corpus: pinned copies of real client PDFs, built by
+# scripts/build_verdict_corpus.py. Only their hashes are tracked
+# (tests/data/verdict_corpus.sha256); the files themselves never are.
+corpus/
+
+# Pipeline working/quarantine/archive trees (live under input/, but pinned here
+# too in case they ever appear at the repo root).
+_PRUNED/
+SKIPPED_REPORTS/
+PDF_ARCHIVE/
+input/_PRUNED/
+input/SKIPPED_REPORTS/
+input/PDF_ARCHIVE/
+input/UnSorted/
+
+# Upload state ledgers (idempotency + audit trail — machine-local state).
+.upload_state.json
+.upload_state.dryrun.json
+output/upload_status.json
+
+# Persistent parse cache (content-addressed .docx parse memoization — machine-local,
+# regenerated on demand from input/, never source).
+.parse_cache/
+
+# LAN ingestion registry + dashboard bookkeeping. The sync manifest records real UNC
+# paths off the client share, so it stays machine-local like the documents themselves.
+.state/
+
+# Portal fill diagnostics (screenshots / DOM dumps may contain client data).
+output/failures/
+output/portal_form_probe.json
+
+# LAN network-share discovery report — enumerates real client/project folder
+# names off the share, so it stays machine-local like the client documents above.
+LAN_NETWORK_DISCOVERY_REPORT.md
+
+# Graphify knowledge-graph output.
+graphify-out/
+
+# ===========================================================================
+# Build artifacts (PyInstaller)
+# ===========================================================================
+build/
+dist/
+*.spec
+*.exe
+
+# ===========================================================================
+# Python
+# ===========================================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+venv/
+.venv/
+.pytest_cache/
+
+# ===========================================================================
+# Font binaries (licensing + repo size) — keep the folder + README.
+# ===========================================================================
+assets/fonts/*.ttf
+assets/fonts/*.otf
+
+# ===========================================================================
+# Sample / demo documents rendered with non-default presentation switches.
+# They live OUTSIDE output/ on purpose: uploader._report_sidecars rglobs
+# output/ and upload_ledger.ledger_key is the root-relative path, so a copy
+# under output/ is a SECOND, unuploaded ledger key for a report already filed.
+# ===========================================================================
+samples/
+
+# Export copy of output/ (services/report_export.py, export.enabled): PDF/JSON
+# per client/year. Machine-local, rebuilt from output/ on every run.
+reports/
+
+# ===========================================================================
+# OS / editor
+# ===========================================================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ===========================================================================
+# Keep-files must survive the folder ignores above.
+# ===========================================================================
+!.gitkeep
+file_paths_ex.md
+# Inspector request lists carry LAN paths; never commit them.
+docs/inspector_request_*.md

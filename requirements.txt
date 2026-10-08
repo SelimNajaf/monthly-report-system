@@ -1,0 +1,14 @@
+# Core runtime dependencies for the Monthly Report Automation pipeline.
+# Pinned with lower bounds; run `pip install -r requirements.txt`.
+
+python-docx>=1.1.2      # Faithful .docx parsing (paragraphs, tables, runs; ignores images)
+reportlab>=4.2.0        # PDF engine (Platypus) — stable tables, long-text wrapping, TTF embedding
+PyYAML>=6.0.1           # Load config/settings.yaml and config/fields.yaml
+python-dateutil>=2.9.0  # Robust, flexible inspection-date parsing
+PyMuPDF>=1.24           # Direct PDF reading (ADR-003). Replaced pdf2docx, which shattered tables and mis-set 15.2% of verdicts
+playwright>=1.44.0      # Browser automation for uploader.py (run `playwright install chromium` after pip install; NOT needed for --dry-run)
+PySide6>=6.10.0         # Desktop dashboard (gui_launcher.py). LGPL — unlike PyQt6, no GPL/commercial obligation. NOT needed for the CLI pipeline.
+
+# --- Development (optional; install with: pip install -r requirements.txt) ---
+pytest>=8.2.0           # Test runner (test suite added in later phases)
+pyinstaller>=6.16.0     # Build-time only — compiles the dashboard into a standalone .exe (see README / ADR-002)

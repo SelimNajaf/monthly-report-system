@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monthly-report-auto"
+version = "0.1.0"
+description = "Automated pipeline: English .docx inspection reports -> filtered, translated (Azerbaijani), merged, print-ready PDF."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Monthly Report Automation Team" }]
+
+dependencies = [
+    "python-docx>=1.1.2",
+    "reportlab>=4.2.0",
+    "PyYAML>=6.0.1",
+    "python-dateutil>=2.9.0",
+    # Both are imported by the shipped entry points but were missing here: main.py
+    # reads .pdf directly via PyMuPDF (ADR-003), and uploader.py drives Playwright.
+    "PyMuPDF>=1.24",
+    "playwright>=1.44.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2.0"]
+# The desktop dashboard is optional: the pipeline and uploader run headless
+# without it, which is what CI and unattended scheduling use.
+gui = ["PySide6>=6.10.0"]
+build = ["pyinstaller>=6.16.0"]
+
+[project.scripts]
+# Console entry point -> enables `monthly-report --month 2026-07`
+monthly-report = "monthly_report.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
